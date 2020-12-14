@@ -10,8 +10,7 @@ heroku_buildpack_dir="$(
 	pwd
 )"
 
-
-echo "${cache_dir}"
+echo "${env_dir}"
 export
 exit 1
 
