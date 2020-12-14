@@ -16,8 +16,7 @@ function handle_env_dir() {
 			local env_suffix="${BASH_REMATCH[2]}"
 
 			case "${env_suffix}" in
-			# We do not do anything with delimiter files, we only use them for .append and .prepend
-			".delim") continue ;;
+			".delim") continue ;; # Skip .delim files, we only use them in .append and .prepend
 			".override" | "") export "${env_name}"="$(cat "${file}")" ;;
 			".default")
 				if [[ -z "${!env_name}" ]]; then
@@ -56,6 +55,15 @@ function handle_layer_dir() {
 
 	if [[ -d "${layer_dir}/env" ]]; then
 		handle_env_dir "${layer_dir}/env"
+	fi
+
+	if [[ -d "${layer_dir}/profile.d" ]]; then
+		for script in "${layer_dir}/profile.d"/*; do
+			if [[ -f "${script}" ]]; then
+				# shellcheck disable=SC1090
+				source "${script}"
+			fi
+		done
 	fi
 }
 
