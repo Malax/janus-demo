@@ -80,7 +80,7 @@ mkdir -p "${app_dir}/.janus"
 from_toml "${CNB_GROUP_PATH}" '[.group[].id] | map(gsub("/"; "_")) | join(" ")' > "${app_dir}/.janus/buildpack_order"
 
 mkdir -p "${app_dir}/.profile.d"
-cp "${heroku_buildpack_dir}/opt/profile.d/"* "${app_dir}/profile.d/"
+cp "${heroku_buildpack_dir}/opt/.profile.d/"* "${app_dir}/.profile.d/"
 
 ##############################
 # Move .janus directory to app
