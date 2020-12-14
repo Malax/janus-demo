@@ -57,6 +57,7 @@ function handle_layer_dir() {
 		handle_env_dir "${layer_dir}/env"
 	fi
 
+	# Do we need some sort of safeguard for crashing profile.d scripts?
 	if [[ -d "${layer_dir}/profile.d" ]]; then
 		for script in "${layer_dir}/profile.d"/*; do
 			if [[ -f "${script}" ]]; then

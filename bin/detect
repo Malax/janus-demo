@@ -4,6 +4,11 @@ set -euo pipefail
 # shellcheck disable=SC2034
 app_dir="${1}"
 
+>&2 export
+
+exit 1
+
+
 heroku_buildpack_dir="$(
 	cd "$(dirname "${0}")/.." || exit
 	pwd
