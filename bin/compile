@@ -13,6 +13,9 @@ heroku_buildpack_dir="$(
 # shellcheck source=lib/common.sh
 source "${heroku_buildpack_dir}/lib/common.sh"
 
+mkdir -p "${app_dir}/.janus"
+mkdir -p "${app_dir}/.profile.d"
+
 # Initialize platform directory
 mkdir "${CNB_PLATFORM_DIR}/env"
 if compgen -G "${env_dir}/*" >/dev/null; then
@@ -73,13 +76,10 @@ for buildpack in $(from_toml "${CNB_LAYERS_DIR}/config/metadata.toml" "${JQ_BUIL
 	done
 done
 
-##################################
-# Generate Janus .profile.d script
-##################################
-mkdir -p "${app_dir}/.janus"
+################################
+# Setup Janus .profile.d scripts
+################################
 from_toml "${CNB_GROUP_PATH}" '[.group[].id] | map(gsub("/"; "_")) | join(" ")' > "${app_dir}/.janus/buildpack_order"
-
-mkdir -p "${app_dir}/.profile.d"
 cp "${heroku_buildpack_dir}/opt/.profile.d/"* "${app_dir}/.profile.d/"
 
 ##############################
