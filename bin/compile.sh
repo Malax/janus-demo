@@ -76,6 +76,7 @@ done
 ##################################
 # Generate Janus .profile.d script
 ##################################
+mkdir -p "${app_dir}/.janus"
 from_toml "${CNB_GROUP_PATH}" '[.group[].id] | map(gsub("/"; "_")) | join(" ")' > "${app_dir}/.janus/buildpack_order"
 
 mkdir -p "${app_dir}/.profile.d"
