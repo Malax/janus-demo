@@ -1,0 +1,227 @@
+#!/usr/bin/env bash
+
+# This script is a utility for v2 buildpacks that manually download this buildpack to use as a library
+# The `bin/java` script is meant to be sourced so that functions like `install_java_with_overlay` can
+# be invoked.
+
+JVM_COMMON_DIR="${JVM_COMMON_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && cd .. && pwd)}"
+if [ -f "${JVM_COMMON_DIR}/lib/jvm.sh" ]; then
+  # shellcheck source=lib/jvm.sh
+  source "${JVM_COMMON_DIR}/lib/jvm.sh"
+fi
+
+install_java_with_overlay() {
+  local buildDir="${1}"
+  local cacheDir="${2:-$(mktemp -d)}"
+  if [ ! -f "${buildDir}/.jdk/bin/java" ]; then
+    local jdkVersion
+    jdkVersion=$(get_jdk_version "${buildDir}")
+
+    local jdkUrl
+    jdkUrl=$(_get_jdk_url_with_default "${jdkVersion}")
+
+    _jvm_mcount "version.${jdkVersion}"
+    if [[ "$jdkVersion" == *openjdk* ]]; then
+      status_pending "Installing OpenJDK $(_get_openjdk_version "${jdkVersion}")"
+      _jvm_mcount "vendor.openjdk"
+    elif [[ "$jdkVersion" == *zulu* ]]; then
+      status_pending "Installing Azul Zulu JDK $(_get_zulu_version "${jdkVersion}")"
+      _jvm_mcount "vendor.zulu"
+    else
+      status_pending "Installing JDK ${jdkVersion}"
+      _jvm_mcount "vendor.default"
+    fi
+    install_java "${buildDir}" "${jdkVersion}" "${jdkUrl}"
+    install_jdk_overlay "${buildDir}/.jdk" "${buildDir}"
+    _cache_version "${jdkVersion}" "${cacheDir}"
+    status_done
+  else
+    status "Using provided JDK"
+    _jvm_mcount "vendor.provided"
+  fi
+}
+
+install_java() {
+  local baseDir=${1?"Invalid directory to install java."}
+
+  local jdkVersion="${2:-$DEFAULT_JDK_VERSION}"
+  local jdkUrl=${3:-$(_get_jdk_url_with_default "${jdkVersion}")}
+  local jdkDir="${baseDir}"/.jdk
+  local javaExe="${jdkDir}/bin/java"
+  mkdir -p "${jdkDir}"
+
+  if [ ! -f "${javaExe}" ] || is_java_version_change "${jdkDir}" "${jdkVersion}"; then
+    rm -rf "${jdkDir}"
+    mkdir -p "${jdkDir}"
+    validate_jdk_url "${jdkUrl}" "${jdkVersion}"
+    install_jdk "${jdkUrl}" "${jdkDir}" "${JVM_COMMON_DIR}"
+    install_certs "${jdkDir}"
+    echo "${jdkVersion}" >"${jdkDir}/version"
+    if [ ! -f "${javaExe}" ]; then
+      error_return "Unable to retrieve the JDK."
+      return 1
+    fi
+  fi
+  export JAVA_HOME=${jdkDir}
+  export PATH="${jdkDir}/bin:${PATH}"
+
+  install_profile "${JVM_COMMON_DIR}" "${baseDir}/.profile.d"
+  _install_tools "${baseDir}"
+  _create_export_script "${JAVA_HOME}" "$(pwd)"
+  _install_pgconfig "${JAVA_HOME}"
+  _install_default_proc_warn "${baseDir}"
+  install_metrics_agent "${JVM_COMMON_DIR}" "${baseDir}/.heroku/bin" "${baseDir}/.profile.d"
+}
+
+validate_jdk_url() {
+  local jdkUrl=${1}
+  local jdkVersion=${2}
+  if [ "$(_get_url_status "${jdkUrl}")" != "200" ]; then
+    echo ""
+    error_return "Unsupported Java version: $jdkVersion
+
+Please check your system.properties file to ensure the java.runtime.version
+is among the list of supported version on the Dev Center:
+https://devcenter.heroku.com/articles/java-support#supported-java-versions
+You can also remove the system.properties from your repo to install
+the default ${DEFAULT_JDK_VERSION} version.
+If you continue to have trouble, you can open a support ticket here:
+https://help.heroku.com
+
+Thanks,
+Heroku"
+    return 1
+  fi
+}
+
+is_java_version_change() {
+  jdkDir=$1
+  jdkVersion=${2:-${DEFAULT_JDK_VERSION}}
+  if [ ! -d "${jdkDir}" ]; then
+    echo "Invalid JDK directory."
+    return 1
+  fi
+  test -f "${jdkDir}/version" && [ "$(cat "${jdkDir}/version")" != "${jdkVersion}" ]
+}
+
+# Legacy functions for backwards compatability
+detect_java_version() {
+  get_jdk_version "$1"
+}
+
+jdk_overlay() {
+  local buildDir=$1
+  install_jdk_overlay "${buildDir}/.jdk" "${buildDir}"
+}
+
+# Internal functions
+
+_install_tools() {
+  local ctxDir=${1:-BUILD_DIR}
+  local curDir=${JVM_COMMON_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && cd .. && pwd)}
+
+  mkdir -p "$ctxDir/.heroku/bin"
+  mkdir -p "$ctxDir/.heroku/with_jmap/bin"
+  cp "$curDir/opt/with_jmap" "$ctxDir/.heroku/bin/with_jmap"
+  cp "$curDir/opt/with_jmap_java" "$ctxDir/.heroku/with_jmap/bin/java"
+  chmod +x "$ctxDir/.heroku/bin/with_jmap"
+  chmod +x "$ctxDir/.heroku/with_jmap/bin/java"
+
+  mkdir -p "$ctxDir/.heroku/with_jstack/bin"
+  cp "$curDir/opt/with_jstack" "$ctxDir/.heroku/bin/with_jstack"
+  cp "$curDir/opt/with_jstack_java" "$ctxDir/.heroku/with_jstack/bin/java"
+  chmod +x "$ctxDir/.heroku/bin/with_jstack"
+  chmod +x "$ctxDir/.heroku/with_jstack/bin/java"
+
+  mkdir -p "$ctxDir/.heroku/with_jmap_and_jstack/bin"
+  cp "$curDir/opt/with_jmap_and_jstack" "$ctxDir/.heroku/bin/with_jmap_and_jstack"
+  cp "$curDir/opt/with_jmap_and_jstack_java" "$ctxDir/.heroku/with_jmap_and_jstack/bin/java"
+  chmod +x "$ctxDir/.heroku/bin/with_jmap_and_jstack"
+  chmod +x "$ctxDir/.heroku/with_jmap_and_jstack/bin/java"
+}
+
+_install_default_proc_warn() {
+  local ctxDir=${1:-BUILD_DIR}
+
+  mkdir -p "${ctxDir}/.profile.d"
+  cat <<EOF >"${ctxDir}/.profile.d/default-proc-warning.sh"
+if [ ! -f /app/Procfile ] && [ "\$DYNO" = "web.1" ]; then
+  echo "Create a Procfile to customize the command used to run this process: https://devcenter.heroku.com/articles/procfile"
+fi
+EOF
+}
+
+_create_export_script() {
+  local javaHome=${1:-JAVA_HOME}
+  local ctxDir=${2:-CWD}
+
+  if [ -w "${ctxDir}" ]; then
+    cat <<EOF >"${ctxDir}/export"
+export JAVA_HOME=$javaHome
+export PATH=\$JAVA_HOME/bin:\$PATH
+export LD_LIBRARY_PATH="\$JAVA_HOME/jre/lib/amd64/server:\$LD_LIBRARY_PATH"
+EOF
+  fi
+}
+
+_install_pgconfig() {
+  local javaHome=${1:-JAVA_HOME}
+  local extDir="${javaHome}/jre/lib/ext"
+
+  if [ -d "${extDir}" ] && [ -z "${SKIP_PGCONFIG_INSTALL:-}" ] && [ "${CI:-}" != "true" ]; then
+    curl --retry 3 -s -L "https://lang-jvm.s3.amazonaws.com/pgconfig.jar" -o "${extDir}/pgconfig.jar"
+  fi
+}
+
+# This function implements a legacy behavior in which the JDK_URL_1_8 or similar config var
+# could be used to override the URL to the JDK binary for a specific version. It's
+# not supported in the v3 implementation of the buildpack.
+_get_jdk_url_with_default() {
+  local jdkVersion="${1:?}"
+  if [ -n "${JDK_URL_1_7:-}" ] && { [ "$(expr "${jdkVersion}" : '^1.7')" != 0 ] || [ "$(expr "${jdkVersion}" : '^7')" != 0 ]; }; then
+    echo "$JDK_URL_1_7"
+  elif [ -n "${JDK_URL_1_8:-}" ] && { [ "$(expr "${jdkVersion}" : '^1.8')" != 0 ] || [ "$(expr "${jdkVersion}" : '^8')" != 0 ]; }; then
+    echo "$JDK_URL_1_8"
+  elif [ -n "${JDK_URL_1_9:-}" ] && { [ "$(expr "${jdkVersion}" : '^1.9')" != 0 ] || [ "$(expr "${jdkVersion}" : '^9')" != 0 ]; }; then
+    echo "$JDK_URL_1_9"
+  elif [ -n "${JDK_URL_10:-}" ] && [ "$(expr "${jdkVersion}" : '^10')" != 0 ]; then
+    echo "$JDK_URL_10"
+  elif [ -n "${JDK_URL_11:-}" ] && [ "$(expr "${jdkVersion}" : '^11')" != 0 ]; then
+    echo "$JDK_URL_11"
+  elif [ -n "${JDK_URL_12:-}" ] && [ "$(expr "${jdkVersion}" : '^12')" != 0 ]; then
+    echo "$JDK_URL_12"
+  elif [ -n "${JDK_URL_13:-}" ] && [ "$(expr "${jdkVersion}" : '^13')" != 0 ]; then
+    echo "$JDK_URL_13"
+  else
+    get_jdk_url "$jdkVersion"
+  fi
+}
+
+_get_zulu_version() {
+  echo "${1//zulu-/}"
+}
+
+_get_openjdk_version() {
+  echo "${1//openjdk-/}"
+}
+
+_get_url_status() {
+  curl --retry 3 --silent --head -w "%{http_code}" -L "${1}" -o /dev/null
+}
+
+_jvm_mcount() {
+  if type -t mcount >/dev/null; then mcount "jvm.${1}"; fi
+}
+
+# Caching the JVM version will allow us to pin previous used defaults when
+# upgrading the default JDK. That is, if an app has JDK 8 installed now
+# because it's the default, it will continue to have JDK 8 installed when the
+# default is upgraded to JDK 11.
+_cache_version() {
+  local jdkVersion="${1}"
+  local cacheDir="${2}"
+
+  if [ -d "${cacheDir}" ]; then
+    echo "java.runtime.version=${jdkVersion}" >"${cacheDir}/system.properties"
+  fi
+}

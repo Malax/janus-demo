@@ -1,39 +1,14 @@
 [[order]]
 
 [[order.group]]
-id = "heroku/nodejs-engine"
-version = "0.7.0"
-
-[[order.group]]
-id = "heroku/nodejs-yarn"
-version = "0.1.0"
-
-[[order.group]]
-id = "heroku/nodejs-typescript"
+id = "heroku/python"
 optional = true
-version = "0.2.0"
-
-[[order.group]]
-id = "heroku/procfile"
-optional = true
-version = "0.6"
-
-[[order]]
-
-[[order.group]]
-id = "heroku/nodejs-engine"
-version = "0.7.0"
-
-[[order.group]]
-id = "heroku/nodejs-npm"
 version = "0.4.0"
 
 [[order.group]]
-id = "heroku/nodejs-typescript"
-optional = true
-version = "0.2.0"
+id = "heroku/jvm"
+version = "0.1.0"
 
 [[order.group]]
-id = "heroku/procfile"
-optional = true
-version = "0.6"
+id = "jkutner/minecraft-server"
+version = "0.1.1"
