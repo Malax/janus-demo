@@ -10,10 +10,6 @@ heroku_buildpack_dir="$(
 	pwd
 )"
 
-echo "${env_dir}"
-export
-exit 1
-
 # shellcheck source=lib/common.sh
 source "${heroku_buildpack_dir}/lib/common.sh"
 
